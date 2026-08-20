@@ -37,7 +37,8 @@ in validation. A program with no intelligence whatsoever that always answers
 | `experiment/more-epochs` | epochs 15 → 30, nothing else | 30 | – | – | – | pending |
 | `experiment/deeper-cnn` | one extra Conv2D + MaxPooling block | 15 | – | – | – | pending |
 | `experiment/augmentation-dropout` | RandomFlip + RandomRotation + Dropout(0.3) | 25 | – | – | – | pending |
-| `experiment/class-weights` | `class_weight` inversely proportional to class frequency | 15 | – | – | – | pending |
+| `experiment/class-weights` | `class_weight` inversely proportional to class frequency | 15 | 71.43% | 64.73% | 2/6 | bias removed, exposing weak features - essential component, not sufficient alone |
+| `experiment/combined` | synthesis: 4 conv blocks + augmentation + dropout + class weights | 30 | – | – | – | pending |
 
 ## Branch notes
 
@@ -59,3 +60,54 @@ Two clear problems for the experiments to attack:
    (targeted by `experiment/augmentation-dropout`).
 2. **Class imbalance** - dogs outnumber cats almost 2:1, so guessing "dog" is a
    cheap way to lower the loss (targeted by `experiment/class-weights`).
+
+### `experiment/class-weights` - inverse-frequency class weighting
+
+`model.fit` now receives `class_weight={0: 1.4474, 1: 0.7639}`, computed from the
+real counts as `total / (n_classes * count_of_this_class)`. A cat mistake costs
+**1.9x** more than a dog mistake, and the total weighted cost per class comes out
+exactly equal (`1.4474 x 95 = 137.5` and `0.7639 x 180 = 137.5`), so the network
+trains as if the dataset were balanced. Only the loss is weighted - Keras' accuracy
+metric still counts every image equally, so these numbers stay comparable with the
+other rows.
+
+Best validation accuracy was **71.43%** (epoch 5), the highest of all four
+experiments, achieved while training accuracy was only 64.73% - the model was still
+generalising, not memorising.
+
+The foreign photos scored **2/6**, the *lowest* of the project, and that number is
+the most informative result in the whole log. The predictions no longer look
+anything like before:
+
+| | baseline / deeper / augmented | class-weights |
+|---|---|---|
+| confidence range | 69% - 92% | **51% - 58%** |
+| answers | "dog" six times out of six | mixed |
+
+The majority-class bias is **gone**: the model no longer leans on "dog" as a safe
+default. But with the bias removed, what is left underneath is a model sitting near
+50/50 on every photo - it has almost no genuinely discriminative features. The
+labrador landed on the wrong side of 0.5 essentially by chance, which is why 2/6 is
+not really worse than 3/6; both are noise around a coin flip.
+
+**Decision: essential component, not sufficient alone.** Class weighting removes the
+shortcut that hid the real weakness. Now that the model can no longer cheat, it needs
+better features and more input variety to actually learn - which is what the final
+synthesis experiment provides.
+
+## Synthesis phase
+
+Experiments 1-4 were deliberately **single-variable**: each changed exactly one thing
+so that its effect could be attributed with confidence. That isolation phase produced
+three separate findings:
+
+* depth improved features and closed the train/validation gap (`deeper-cnn`),
+* augmentation and dropout genuinely stopped memorisation (`augmentation-dropout`),
+* class weighting removed the majority-class bias (`class-weights`),
+
+and one clear negative result (`more-epochs`: more training changes nothing).
+
+No single change was enough, because the baseline had **three independent problems**.
+`experiment/combined` therefore stops isolating and starts synthesising: it applies
+every proven component at once, which is a legitimate final step precisely *because*
+each part was measured on its own first.

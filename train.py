@@ -44,7 +44,7 @@ VAL_DIR = os.path.join("data", "val")
 CLASS_NAMES = ["cat", "dog"]   # fixed order -> label 0 = cat, label 1 = dog
 MODEL_PATH = "model.keras"
 
-EXPERIMENT_NAME = "baseline"   # printed in the report, documented in RESULTS.md
+EXPERIMENT_NAME = "class-weights"   # printed in the report, documented in RESULTS.md
 
 LINE = "=" * 64
 
@@ -112,6 +112,26 @@ def count_labels(dataset: tf.data.Dataset) -> dict[str, int]:
     """Count how many images of each class a dataset contains."""
     labels = np.concatenate([y.numpy().ravel() for _, y in dataset])
     return {name: int((labels == i).sum()) for i, name in enumerate(CLASS_NAMES)}
+
+
+def compute_class_weights(counts: dict[str, int]) -> dict[int, float]:
+    """EXPERIMENT (class-weights): make the rare class count for more.
+
+    The training set holds 180 dogs but only 95 cats, so a lazy network can lower
+    its loss simply by answering "dog" - which is exactly what every previous
+    experiment did. Weighting each class inversely to how often it appears removes
+    that shortcut: getting one cat wrong now costs almost twice as much as getting
+    one dog wrong, so ignoring cats is no longer cheap.
+
+    Formula: weight = total_images / (number_of_classes * images_in_this_class),
+    which gives the rare class a weight above 1 and the common class below 1 while
+    keeping the average cost per image roughly unchanged.
+    """
+    total = sum(counts.values())
+    return {
+        index: total / (len(CLASS_NAMES) * counts[name])
+        for index, name in enumerate(CLASS_NAMES)
+    }
 
 
 def majority_class_baseline(counts: dict[str, int]) -> tuple[str, float]:
@@ -230,7 +250,15 @@ def main() -> None:
 
     model = build_model()
     print(f"  model      {model.count_params():,} trainable parameters, "
-          f"trained from scratch\n{LINE}")
+          f"trained from scratch")
+
+    # EXPERIMENT (class-weights): the only change versus the baseline.
+    class_weights = compute_class_weights(train_counts)
+    print(f"  weights    "
+          + ",   ".join(f"{name} x{class_weights[i]:.2f}"
+                        for i, name in enumerate(CLASS_NAMES))
+          + "   (inverse class frequency)")
+    print(LINE)
 
     # Keep the weights from the epoch with the best validation accuracy, not the
     # last epoch, which may already be overfitting.
@@ -244,6 +272,7 @@ def main() -> None:
         validation_data=val_ds,
         epochs=EPOCHS,
         callbacks=[checkpoint, EpochReporter()],
+        class_weight=class_weights,   # EXPERIMENT: cats cost more to get wrong
         shuffle=False,   # the tf.data pipeline already reshuffles every epoch
         verbose=0,       # our EpochReporter prints the progress instead
     )
