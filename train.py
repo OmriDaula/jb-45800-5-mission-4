@@ -35,7 +35,7 @@ from tensorflow.keras import layers
 SEED = 42               # one seed for Python, NumPy and TensorFlow
 IMG_SIZE = (128, 128)   # all images are resized to this before training
 BATCH_SIZE = 32
-EPOCHS = 15
+EPOCHS = 25   # augmented images are harder, so the model needs more passes
 LEARNING_RATE = 1e-3
 SHUFFLE_BUFFER = 1000   # larger than the dataset, so shuffling is a true full shuffle
 
@@ -44,7 +44,7 @@ VAL_DIR = os.path.join("data", "val")
 CLASS_NAMES = ["cat", "dog"]   # fixed order -> label 0 = cat, label 1 = dog
 MODEL_PATH = "model.keras"
 
-EXPERIMENT_NAME = "baseline"   # printed in the report, documented in RESULTS.md
+EXPERIMENT_NAME = "augmentation-dropout"   # printed in the report, documented in RESULTS.md
 
 LINE = "=" * 64
 
@@ -131,16 +131,29 @@ def majority_class_baseline(counts: dict[str, int]) -> tuple[str, float]:
 def build_model() -> keras.Model:
     """A small sequential CNN built from basic Keras layers.
 
-    Three convolution blocks progressively halve the resolution while doubling
-    the number of feature maps (128 -> 64 -> 32 -> 16 pixels, 16 -> 32 -> 64
-    filters), then a dense head turns those features into one probability.
+    Same three convolution blocks as the baseline (128 -> 64 -> 32 -> 16 pixels,
+    16 -> 32 -> 64 filters), so the architecture itself is unchanged.
 
-    This is the deliberately plain BASELINE: no augmentation and no dropout, so
-    the experiment branches have something honest to improve on.
+    EXPERIMENT (augmentation-dropout): two augmentation layers are added in front
+    and one Dropout layer in the head. Both attack the baseline's overfitting -
+    the network memorised its 275 photos - but from opposite directions:
+    augmentation varies the input, dropout stops the head from relying on any
+    single feature.
     """
     model = keras.Sequential(
         [
             keras.Input(shape=IMG_SIZE + (3,)),
+
+            # --- augmentation (this experiment) ---------------------------
+            # Every epoch the same photo arrives mirrored and slightly turned,
+            # so the model effectively sees far more than 275 examples and can
+            # no longer memorise them one by one.
+            # These layers are active ONLY while training: Keras switches them
+            # off during evaluation and prediction, so predict.py needs no
+            # change and never sees a rotated image.
+            layers.RandomFlip("horizontal", seed=SEED),   # a mirrored cat is still a cat
+            layers.RandomRotation(0.1, seed=SEED),        # +/- 10% of a full turn (~36 deg)
+
             # Pixels arrive as 0-255 integers; neural nets train far better on
             # small floats, so scale them into the 0-1 range.
             layers.Rescaling(1.0 / 255),
@@ -156,6 +169,13 @@ def build_model() -> keras.Model:
 
             layers.Flatten(),
             layers.Dense(64, activation="relu"),
+
+            # --- dropout (this experiment) --------------------------------
+            # While training, 30% of these 64 features are randomly zeroed on
+            # every step, so the decision cannot depend on one lucky feature.
+            # Like the augmentation layers, it turns itself off for prediction.
+            layers.Dropout(0.3, seed=SEED),
+
             # One output neuron + sigmoid = probability that the image is a dog.
             layers.Dense(1, activation="sigmoid"),
         ],

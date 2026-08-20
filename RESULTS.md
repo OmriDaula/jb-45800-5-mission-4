@@ -36,7 +36,7 @@ in validation. A program with no intelligence whatsoever that always answers
 | `main` | baseline: 3 conv blocks, no augmentation, no dropout | 15 | **68.57%** | 74.91% | **3/6** | baseline |
 | `experiment/more-epochs` | epochs 15 → 30, nothing else | 30 | – | – | – | pending |
 | `experiment/deeper-cnn` | one extra Conv2D + MaxPooling block | 15 | – | – | – | pending |
-| `experiment/augmentation-dropout` | RandomFlip + RandomRotation + Dropout(0.3) | 25 | – | – | – | pending |
+| `experiment/augmentation-dropout` | RandomFlip + RandomRotation + Dropout(0.3) | 25 | 68.57% | 72.00% | 3/6 | rejected as standalone - fixes overfitting, not the collapse; regularisation candidate |
 | `experiment/class-weights` | `class_weight` inversely proportional to class frequency | 15 | – | – | – | pending |
 
 ## Branch notes
@@ -59,3 +59,33 @@ Two clear problems for the experiments to attack:
    (targeted by `experiment/augmentation-dropout`).
 2. **Class imbalance** - dogs outnumber cats almost 2:1, so guessing "dog" is a
    cheap way to lower the loss (targeted by `experiment/class-weights`).
+
+### `experiment/augmentation-dropout` - RandomFlip + RandomRotation + Dropout(0.3)
+
+Three regularisation layers were added to the **unchanged baseline architecture**:
+`RandomFlip("horizontal")` and `RandomRotation(0.1)` in front of the network, and
+`Dropout(0.3)` after the dense layer. All three are inside the model and Keras
+activates them only while training, so `predict.py` still sees clean, unrotated
+images and needed no modification. They add **zero parameters** (still 1,072,289),
+which makes this a clean single-variable comparison with the baseline.
+
+The intervention worked exactly as intended on its own target:
+
+* Training accuracy stayed at roughly **80-84%** across all 25 epochs, instead of
+  running away to 98-100% as it did in the baseline and in `more-epochs`.
+* At the saved epoch the numbers were 72.00% train / 68.57% validation - a healthy
+  gap of under 4 points.
+
+**And it changed the outcome by nothing.** Validation accuracy was 68.57%, identical
+to the baseline, and the foreign photos scored **3/6** yet again, all six answered
+"dog", with the wrong answers now the most confident of the whole project (the kitten
+at 91.8%).
+
+This is the pivotal result of the calibration. Memorisation was successfully
+suppressed and the score did not move, which proves **memorisation was never the
+real problem**. What remains is the training signal itself: with 180 dogs against 95
+cats, answering "dog" is simply the cheapest way to lower the loss, and no amount of
+regularisation makes that untrue.
+
+**Decision: rejected as a standalone change**, but kept as a regularisation
+candidate for combining with a fix that addresses the imbalance directly.
