@@ -19,10 +19,12 @@ import numpy as np
 from tensorflow import keras
 
 # ----------------------------------------------------------------------------
-# Configuration - these three values MUST match train.py
+# Configuration
 # ----------------------------------------------------------------------------
-IMG_SIZE = (128, 128)        # the input size the model was trained on
-CLASS_NAMES = ["cat", "dog"] # label 0 = cat, label 1 = dog
+# Note there is no image size here: it is read from the trained model itself (see
+# model_image_size), so changing IMG_SIZE in train.py can never leave predict.py
+# resizing images to the wrong dimensions.
+CLASS_NAMES = ["cat", "dog"] # label 0 = cat, label 1 = dog - must match train.py
 MODEL_PATH = "model.keras"
 
 TEST_DIR = "test-images"
@@ -70,20 +72,32 @@ def collect_image_paths(args: list[str]) -> list[str]:
 # ----------------------------------------------------------------------------
 # Prediction
 # ----------------------------------------------------------------------------
-def load_image(path: str) -> np.ndarray:
+def model_image_size(model: keras.Model) -> tuple[int, int]:
+    """Ask the model which image size it was trained on.
+
+    The model's input shape is (batch, height, width, channels), so reading it
+    keeps predict.py correct automatically - no constant here to forget to update
+    when train.py changes.
+    """
+    _, height, width, _ = model.input_shape
+    return height, width
+
+
+def load_image(path: str, img_size: tuple[int, int]) -> np.ndarray:
     """Read one image from disk into the exact shape the model expects.
 
     Note there is no division by 255 here: the Rescaling layer is *inside* the
     model, so scaling happens automatically and cannot get out of sync with
     training - a very common source of silently wrong predictions.
     """
-    image = keras.utils.load_img(path, target_size=IMG_SIZE)  # also handles resizing
+    image = keras.utils.load_img(path, target_size=img_size)  # also handles resizing
     return keras.utils.img_to_array(image)
 
 
 def predict_all(model: keras.Model, paths: list[str]) -> list[float]:
     """Return P(dog) for every image, using a single batched forward pass."""
-    batch = np.stack([load_image(path) for path in paths])
+    img_size = model_image_size(model)
+    batch = np.stack([load_image(path, img_size) for path in paths])
     probabilities = model.predict(batch, verbose=0)
     return [float(p) for p in probabilities.ravel()]
 
@@ -127,7 +141,9 @@ def main() -> None:
     model = load_trained_model()
 
     print(f"\n{LINE}\n  CAT vs DOG  -  prediction on unseen images\n{LINE}")
-    print(f"  model      {MODEL_PATH} ({model.count_params():,} parameters)")
+    height, width = model_image_size(model)
+    print(f"  model      {MODEL_PATH} ({model.count_params():,} parameters, "
+          f"{height}x{width} input)")
     print(f"  images     {len(paths)} file(s)"
           f"{'' if sys.argv[1:] else f' from {TEST_DIR}/'}\n{LINE}")
 
