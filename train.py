@@ -35,7 +35,7 @@ from tensorflow.keras import layers
 SEED = 42               # one seed for Python, NumPy and TensorFlow
 IMG_SIZE = (128, 128)   # all images are resized to this before training
 BATCH_SIZE = 32
-EPOCHS = 15
+EPOCHS = 30
 LEARNING_RATE = 1e-3
 SHUFFLE_BUFFER = 1000   # larger than the dataset, so shuffling is a true full shuffle
 
@@ -44,7 +44,7 @@ VAL_DIR = os.path.join("data", "val")
 CLASS_NAMES = ["cat", "dog"]   # fixed order -> label 0 = cat, label 1 = dog
 MODEL_PATH = "model.keras"
 
-EXPERIMENT_NAME = "baseline"   # printed in the report, documented in RESULTS.md
+EXPERIMENT_NAME = "more-epochs"   # printed in the report, documented in RESULTS.md
 
 LINE = "=" * 64
 

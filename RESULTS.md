@@ -34,7 +34,7 @@ in validation. A program with no intelligence whatsoever that always answers
 |--------|--------|:------:|:------------:|:--------------:|:---------:|----------|
 | _(no model)_ | always answer "dog" | – | 65.71% | – | 3/6 | reference only |
 | `main` | baseline: 3 conv blocks, no augmentation, no dropout | 15 | **68.57%** | 74.91% | **3/6** | baseline |
-| `experiment/more-epochs` | epochs 15 → 30, nothing else | 30 | – | – | – | pending |
+| `experiment/more-epochs` | epochs 15 → 30, nothing else | 30 | 68.57% | 74.91% | 3/6 | rejected - more training only memorizes |
 | `experiment/deeper-cnn` | one extra Conv2D + MaxPooling block | 15 | – | – | – | pending |
 | `experiment/augmentation-dropout` | RandomFlip + RandomRotation + Dropout(0.3) | 25 | – | – | – | pending |
 | `experiment/class-weights` | `class_weight` inversely proportional to class frequency | 15 | – | – | – | pending |
@@ -59,3 +59,21 @@ Two clear problems for the experiments to attack:
    (targeted by `experiment/augmentation-dropout`).
 2. **Class imbalance** - dogs outnumber cats almost 2:1, so guessing "dog" is a
    cheap way to lower the loss (targeted by `experiment/class-weights`).
+
+### `experiment/more-epochs` - epochs 15 → 30
+
+Doubling the training time changed the result by **nothing at all**: best validation
+accuracy was again 68.57% at epoch 6, and not one of the 24 later epochs ever beat
+it. Meanwhile training accuracy reached **100.00%** with a training loss of 0.0019,
+while validation loss climbed to **1.85** - the model fits its 275 training photos
+perfectly and gets steadily *worse* at everything else. The foreign photos still
+scored 3/6 with "dog" as the answer every time.
+
+Because the seed is fixed, the first 15 epochs are bit-for-bit identical to the
+baseline; the only new information is what happens in epochs 16-30, and the answer
+is "nothing good".
+
+**Decision: rejected.** This is the most useful negative result in the log: it proves
+the bottleneck is not the amount of training but the lack of data variety and the
+class imbalance. Simply waiting longer cannot fix either, so the next experiments
+change the model and the training signal instead.
