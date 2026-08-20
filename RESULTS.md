@@ -267,3 +267,44 @@ depth, epoch selection - and the remaining wall is the size of the dataset itsel
 usual professional answer at this point is transfer learning, which is deliberately
 out of scope for this assignment, so the honest deliverable is a well-engineered small
 CNN plus a clear-eyed account of its limits.
+
+### Final sub-experiment: 64x64 input + RandomZoom(0.1) - rejected
+
+One last cheap idea was tested before locking the configuration: shrink the input from
+128x128 to 64x64 and add `RandomZoom(0.1)`. The reasoning was sound - a quarter of the
+pixels means a quarter of the fine detail to overfit on, the parameter count drops from
+621,857 to **228,641**, and zoom augmentation targets a real mismatch (the training
+photos are tight pet portraits, the foreign photos are wider scenes).
+
+It failed both acceptance conditions that had been agreed in advance:
+
+| | epoch-9 model (kept) | 64x64 + zoom |
+|---|---|---|
+| `val_loss` | **0.6007** | 0.6158 - worse |
+| foreign 6 | 2/6, confidences 62-83% | "3/6" - but see below |
+
+The 3/6 was an **illusion, and reading it correctly is the whole point**: all six
+photos were answered "dog" again, at 73-78% confidence, with the labrador back to
+"dog" at 51.2%. That is precisely the always-answer-dog reference score of 3/6 - the
+model had regressed to the baseline's majority-class behaviour, not improved at
+recognition. Taken at face value, 3/6 looks like an improvement over 2/6; looked at
+honestly, it is the opposite.
+
+**Lessons recorded:**
+
+1. **A score is meaningless without its prediction pattern.** 3/6 from a model that
+   always says "dog" is worse than 2/6 from a model that actually disagrees with
+   itself across photos.
+2. **64x64 destroys the evidence.** Cats and dogs differ in fine structure - whisker
+   lines, ear edges, eye and muzzle shape. Halving the resolution removes exactly the
+   detail the network needs, so the capacity saving is not worth the information lost.
+3. **Reducing capacity is an exhausted lever.** Depth already cut parameters from
+   1.07M to 622k with a real gain; cutting to 229k gave a loss. There is no more
+   headroom in making the model smaller.
+
+**Decision: reverted.** The `experiment/combined` configuration at 128x128 stands as
+the final model. One piece of this attempt was kept, because it is an improvement
+independent of image size: `predict.py` no longer hardcodes the input size, it reads
+it from the trained model with `model.input_shape`. Training and prediction can
+therefore never disagree about preprocessing - a mismatch that is one of the most
+common silent bugs in real machine-learning code.
