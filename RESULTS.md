@@ -35,7 +35,7 @@ in validation. A program with no intelligence whatsoever that always answers
 | _(no model)_ | always answer "dog" | – | 65.71% | – | 3/6 | reference only |
 | `main` | baseline: 3 conv blocks, no augmentation, no dropout | 15 | **68.57%** | 74.91% | **3/6** | baseline |
 | `experiment/more-epochs` | epochs 15 → 30, nothing else | 30 | – | – | – | pending |
-| `experiment/deeper-cnn` | one extra Conv2D + MaxPooling block | 15 | – | – | – | pending |
+| `experiment/deeper-cnn` | one extra Conv2D + MaxPooling block | 15 | 70.00% | 68.73% | 3/6 | improved val + closed gap, but still no cat detection - architecture candidate |
 | `experiment/augmentation-dropout` | RandomFlip + RandomRotation + Dropout(0.3) | 25 | – | – | – | pending |
 | `experiment/class-weights` | `class_weight` inversely proportional to class frequency | 15 | – | – | – | pending |
 
@@ -59,3 +59,29 @@ Two clear problems for the experiments to attack:
    (targeted by `experiment/augmentation-dropout`).
 2. **Class imbalance** - dogs outnumber cats almost 2:1, so guessing "dog" is a
    cheap way to lower the loss (targeted by `experiment/class-weights`).
+
+### `experiment/deeper-cnn` - one extra Conv2D + MaxPooling block
+
+A fourth convolution block (filters 16 → 32 → 64 → **128**, resolution
+128 → 64 → 32 → 16 → **8**) lets the network describe larger shapes such as a whole
+head instead of only small local textures. Because the extra pooling shrinks the
+tensor reaching `Flatten` from 16,384 to 8,192 values, the deeper model actually has
+**fewer** parameters than the baseline: 621,857 vs 1,072,289.
+
+Two genuine improvements:
+
+* Best validation accuracy rose to **70.00%** (epoch 7), the highest so far.
+* Training accuracy at that epoch was 68.73%, so the train/validation gap at the
+  saved epoch is essentially **closed** - this model is not memorising.
+
+The foreign photos tell the other half of the story: still **3/6**, still "dog" for
+all six, and now *more* confident on the cats it gets wrong (83-87%, versus 69-80%
+for the baseline). In absolute terms 70.00% means 49 of 70 validation images correct
+against 46 for the always-dog reference, so the whole gain is **three images**. The
+model remains largely a majority-class machine that has simply become better
+calibrated at being wrong.
+
+**Decision: keep as an architecture candidate, not as the final answer.** Depth
+improved the metric and cured the overfitting, but it did not teach the model to
+recognise a cat - which confirms the remaining obstacle is the imbalanced training
+signal, not the shape of the network.

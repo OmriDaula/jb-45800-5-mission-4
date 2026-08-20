@@ -44,7 +44,7 @@ VAL_DIR = os.path.join("data", "val")
 CLASS_NAMES = ["cat", "dog"]   # fixed order -> label 0 = cat, label 1 = dog
 MODEL_PATH = "model.keras"
 
-EXPERIMENT_NAME = "baseline"   # printed in the report, documented in RESULTS.md
+EXPERIMENT_NAME = "deeper-cnn"   # printed in the report, documented in RESULTS.md
 
 LINE = "=" * 64
 
@@ -131,12 +131,14 @@ def majority_class_baseline(counts: dict[str, int]) -> tuple[str, float]:
 def build_model() -> keras.Model:
     """A small sequential CNN built from basic Keras layers.
 
-    Three convolution blocks progressively halve the resolution while doubling
-    the number of feature maps (128 -> 64 -> 32 -> 16 pixels, 16 -> 32 -> 64
-    filters), then a dense head turns those features into one probability.
+    EXPERIMENT (deeper-cnn): a FOURTH convolution block was added on top of the
+    baseline's three. The resolution now shrinks 128 -> 64 -> 32 -> 16 -> 8 while
+    the filters grow 16 -> 32 -> 64 -> 128, so the network can describe larger
+    shapes (a whole head) rather than only small local textures.
 
-    This is the deliberately plain BASELINE: no augmentation and no dropout, so
-    the experiment branches have something honest to improve on.
+    Side effect worth knowing: the extra pooling step makes the tensor reaching
+    Flatten four times smaller, so the model ends up with FEWER parameters than
+    the baseline despite being deeper.
     """
     model = keras.Sequential(
         [
@@ -152,6 +154,10 @@ def build_model() -> keras.Model:
             layers.MaxPooling2D(),
 
             layers.Conv2D(64, 3, padding="same", activation="relu"),
+            layers.MaxPooling2D(),
+
+            # The extra block that defines this experiment.
+            layers.Conv2D(128, 3, padding="same", activation="relu"),
             layers.MaxPooling2D(),
 
             layers.Flatten(),
