@@ -1,0 +1,5 @@
+# Intel macOS CPU only. TensorFlow 2.16.2 is the last official x86_64 wheel
+# (2.17+ dropped Intel Mac). Needs Python 3.9–3.12 — not 3.14.
+tensorflow==2.16.2
+numpy==1.26.4
+pillow==10.4.0
