@@ -35,7 +35,7 @@ from tensorflow.keras import layers
 SEED = 42               # one seed for Python, NumPy and TensorFlow
 IMG_SIZE = (128, 128)   # all images are resized to this before training
 BATCH_SIZE = 32
-EPOCHS = 30   # augmentation makes every epoch harder, so the model needs more of them
+EPOCHS = 40   # five augmentation layers make each epoch harder; val_loss picks the best
 LEARNING_RATE = 1e-3
 SHUFFLE_BUFFER = 1000   # larger than the dataset, so shuffling is a true full shuffle
 
@@ -44,7 +44,7 @@ VAL_DIR = os.path.join("data", "val")
 CLASS_NAMES = ["cat", "dog"]   # fixed order -> label 0 = cat, label 1 = dog
 MODEL_PATH = "model.keras"
 
-EXPERIMENT_NAME = "combined"   # printed in the report, documented in RESULTS.md
+EXPERIMENT_NAME = "stronger-augmentation"   # printed in the report, documented in RESULTS.md
 
 LINE = "=" * 64
 
@@ -150,28 +150,33 @@ def majority_class_baseline(counts: dict[str, int]) -> tuple[str, float]:
 def build_model() -> keras.Model:
     """A small sequential CNN built from basic Keras layers.
 
-    This is the SYNTHESIS model: it combines the two architecture-side findings of
-    the calibration, each measured on its own branch first.
+    Identical to the merged winner on main - four convolution blocks, dropout in
+    the head, class weighting applied in main() - with ONE deliberate difference:
 
-    * four convolution blocks instead of three (from experiment/deeper-cnn), so
-      the network can describe whole shapes such as a head, not just textures,
-    * augmentation in front and dropout in the head (from
-      experiment/augmentation-dropout), so it cannot memorise its 275 photos.
-
-    The third finding, class weighting, is not a layer - it is applied in main().
+    EXPERIMENT (stronger-augmentation): the augmentation block grows from two
+    layers to five, at the unchanged 128x128 resolution. Zoom was previously
+    tested only bundled with a drop to 64x64, so it was never given a fair
+    isolated trial; translation and contrast are added on the same reasoning.
     """
     model = keras.Sequential(
         [
             keras.Input(shape=IMG_SIZE + (3,)),
 
-            # --- augmentation (from experiment/augmentation-dropout) -------
-            # Every epoch the same photo arrives mirrored and slightly turned,
-            # so the model effectively sees far more than 275 examples.
+            # --- augmentation (THE ONLY CHANGE IN THIS EXPERIMENT) ---------
+            # Every epoch the same photo arrives transformed differently, so the
+            # model effectively sees far more than 275 examples.
             # Active ONLY while training: Keras switches these off for
-            # evaluation and prediction, so predict.py never sees a rotated
+            # evaluation and prediction, so predict.py never sees a distorted
             # image and needs no changes.
+            #
+            # The three new layers each target a specific way the foreign photos
+            # differ from the training photos, which are nearly all tightly
+            # framed studio-style pet portraits.
             layers.RandomFlip("horizontal", seed=SEED),   # a mirrored cat is still a cat
             layers.RandomRotation(0.1, seed=SEED),        # +/- 10% of a turn (~36 deg)
+            layers.RandomZoom(0.15, seed=SEED),           # animal near or far away
+            layers.RandomTranslation(0.1, 0.1, seed=SEED),  # animal off-centre in frame
+            layers.RandomContrast(0.2, seed=SEED),        # different light and cameras
 
             # Pixels arrive as 0-255 integers; neural nets train far better on
             # small floats, so scale them into the 0-1 range.

@@ -39,7 +39,8 @@ in validation. A program with no intelligence whatsoever that always answers
 | `experiment/deeper-cnn` | one extra Conv2D + MaxPooling block | 15 | 70.00% | 68.73% | 3/6 | architecture candidate - better metric, still no cat detection |
 | `experiment/augmentation-dropout` | RandomFlip + RandomRotation + Dropout(0.3) | 25 | 68.57% | 72.00% | 3/6 | rejected as standalone - fixes overfitting, not the collapse |
 | `experiment/class-weights` | `class_weight` by inverse class frequency | 15 | **71.43%** | 64.73% | 2/6 | essential component - removes bias, exposes weak features |
-| `experiment/combined` | synthesis: all proven components together | 30 | 72.86% | 72.00% | 2/6 | best model so far - live and honest, but cats still unlearned |
+| `experiment/combined` | synthesis: all proven components together | 30 | 72.86% | 72.00% | 2/6 | **merged into main** - live and honest, but cats still unlearned |
+| `experiment/stronger-augmentation` | augmentation block 2 layers → 5, at 128x128 | 40 | 65.71% | – | 3/6 (all-dog) | rejected - regression to the majority-class baseline |
 
 ## Branch notes
 
@@ -308,3 +309,85 @@ independent of image size: `predict.py` no longer hardcodes the input size, it r
 it from the trained model with `model.input_shape`. Training and prediction can
 therefore never disagree about preprocessing - a mismatch that is one of the most
 common silent bugs in real machine-learning code.
+
+### `experiment/stronger-augmentation` - a fair trial for zoom
+
+**Why this experiment exists: the previous one was not a fair test of zoom.** The
+64x64 attempt changed two things at once - it added `RandomZoom` *and* halved the
+resolution - and it was rejected. But the evidence pointed squarely at the resolution
+as the culprit: 64x64 removes the fine structure (whisker lines, ear edges, muzzle
+shape) that separates a cat from a dog. Zoom itself was never tried on its own, so it
+was condemned for its packaging rather than its content. That is exactly the mistake
+the single-variable discipline of experiments 1-4 was designed to avoid, so zoom gets
+its own trial here.
+
+The change is confined to the augmentation block, at the **unchanged 128x128
+resolution**, with everything else identical to the merged winner (four conv blocks,
+`Dropout(0.3)`, inverse class weights, `val_loss` checkpoint, 621,857 parameters -
+augmentation layers add none):
+
+| layer | kept or new | what mismatch it targets |
+|---|---|---|
+| `RandomFlip("horizontal")` | kept | a mirrored cat is still a cat |
+| `RandomRotation(0.1)` | kept | the animal is not always upright |
+| `RandomZoom(0.15)` | **new** | animal near the camera vs far away |
+| `RandomTranslation(0.1, 0.1)` | **new** | animal off-centre rather than posed |
+| `RandomContrast(0.2)` | **new** | different lighting and cameras |
+
+The reasoning behind all three additions is the same, and it is specific to this
+project's test set: the training photos are nearly all tightly framed, well-lit,
+centred pet portraits, while the six foreign photos from Wikimedia Commons are ordinary
+snapshots - a cat sitting in snow, a husky in a wide outdoor scene. That gap between
+training and reality is precisely what geometric and photometric augmentation exists to
+close.
+
+`EPOCHS` rises from 30 to 40, because five augmentation layers make every epoch a
+harder problem and the model needs more passes to converge. This is safe rather than
+generous: the `val_loss` checkpoint keeps whichever epoch is genuinely best, so extra
+epochs cannot degrade the saved model - as `more-epochs` proved, they simply do nothing
+if there is nothing more to learn.
+
+**Acceptance criteria, fixed before the run:** this replaces the current model only if
+`val_loss` beats **0.6007** *and* the foreign-photo behaviour improves - a real cat
+detected, or at least a live confidence spread with no regression to answering "dog"
+six times. Failing either, it is reverted and the epoch-9 model on `main` stands as
+final. The criteria are written down in advance deliberately, so the result cannot be
+reinterpreted after the fact to look like a success - which is exactly the trap the
+"3/6 illusion" set in the previous experiment.
+
+#### Result: rejected on both criteria
+
+| criterion | required | achieved |
+|---|---|---|
+| `val_loss` | below 0.6007 | **0.6360** - worse |
+| foreign behaviour | a cat detected, or a live spread | **all six answered "dog"** - regression |
+
+Validation accuracy at the saved epoch fell to **65.71%** - which is not merely a lower
+number, it is *exactly* the always-answer-dog reference score, the arithmetic
+fingerprint of a model that has stopped discriminating and gone back to naming the
+common class. The foreign photos agree: six "dog" answers, so the nominal 3/6 is once
+again the majority-class illusion rather than recognition.
+
+**Why it failed, and it is not the same reason as the 64x64 attempt.** Zoom did get its
+fair isolated trial at full resolution, which was the whole point of this branch, and it
+still lost - so the earlier rejection was right, just previously for a partly wrong
+reason. The likely cause here is **augmentation strength outrunning the dataset**: five
+simultaneous transforms (flip, rotate, zoom, translate, contrast) mean the network
+almost never sees an undistorted photo, and with only 95 cats to learn from, the genuine
+signal gets buried under the noise the augmentation introduces. Augmentation combats
+memorisation, but it cannot manufacture information that is not in the data - and past a
+certain intensity it destroys the little that is there.
+
+**Decision: rejected, and the branch is deliberately kept on GitHub without merging.**
+The winning configuration on `main` - the epoch-9 model, `val_loss` 0.6007,
+`val_accuracy` 72.86% - stands as final. Only this documentation was carried over to
+`main`; none of the code.
+
+This closes the calibration with a symmetrical result: strengthening augmentation
+(experiment 6) and weakening capacity (the 64x64 sub-experiment) both fail from opposite
+directions, which is about as clear a demonstration as one could ask for that the binding
+constraint is the **quantity of training data**, not the configuration of the model.
+
+_Note: `train_accuracy` at the saved epoch is left blank in the table above because the
+run's per-epoch training accuracy was not recorded when the result was reported; the two
+acceptance criteria were both decided on `val_loss` and the foreign-photo pattern._
